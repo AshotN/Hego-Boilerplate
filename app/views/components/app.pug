@@ -1,0 +1,23 @@
+doctype html
+html
+	head
+		link(rel='stylesheet' type='text/css' href='styles/main.css')
+		link(rel='stylesheet' type='text/css' href='https://fonts.googleapis.com/css?family=Open+Sans:300,400|Karla|Roboto:300,400')
+		title= title
+	body
+		header
+			.headerPadding
+			.headerImage
+				img(src='images/svg/Hego.svg' alt='Logo')
+			.navContainer
+				nav
+					if currentPage == "Home"
+						span.active Home
+					else
+						a(href='/') Home
+
+
+		block content
+
+		footer
+			.copyright © Hego
