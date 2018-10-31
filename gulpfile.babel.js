@@ -12,34 +12,32 @@ import sourcemaps from 'gulp-sourcemaps'
 import stylus from 'gulp-stylus'
 import postcss from 'gulp-postcss'
 import browserSync from 'browser-sync';
-
-// const server = browserSync.create();
-// function reload(done) {
-// 	server.reload();
-// 	done();
-// }
+import babel from 'gulp-babel';
+import concat from 'gulp-concat';
+import uglify from 'gulp-uglify';
 
 const reload = browserSync.reload;
 
 // Optimize images -
 // if problem https://github.com/tcoopman/image-webpack-loader/issues/95
 
-function images(done) {
-		gulp.src('app/images/**/*')
-			.pipe(newer('.tmp/images'))
-			.pipe(gulp.dest('.tmp/images'))
-			.pipe(image())
-			.pipe(gulp.dest('dist/images'))
-			.pipe(size({title: 'images'}));
-		reload();
-		done();
-}
+gulp.task('images', (cb) => {
+	gulp.src('app/images/**/*')
+	.pipe(newer('.tmp/images'))
+	.pipe(gulp.dest('.tmp/images'))
+	.pipe(image())
+	.pipe(gulp.dest('dist/images'))
+	.pipe(size({title: 'images'}));
+	cb();
+});
+
 
 // Compile and automatically prefix stylesheets
-function stylusTask(done) {
+gulp.task('stylus', (cb) => {
 		const plugins = [
 			autoprefixer(),
-			cssnano()
+			cssnano(),
+			require("postcss-flexbugs-fixes")
 		];
 		// For best performance, don't add Sass partials to `gulp.src`
 		gulp.src('app/stylus/**/main.styl')
@@ -54,10 +52,56 @@ function stylusTask(done) {
 		.pipe(gulp.dest('dist/styles'))
 		.pipe(gulp.dest('.tmp/styles'))
 		.pipe(browserSync.stream());
-		done();
-}
+		cb();
+});
 
-function nodemonTask(cb) {
+// Concatenate and minify JavaScript
+gulp.task('scripts', (cb) => {
+	gulp.src([
+		// Note: Since we are not using useref in the scripts build pipeline,
+		//       you need to explicitly list your scripts here in the right order
+		//       to be correctly concatenated
+		'./app/scripts/main.js'
+		// Other scripts
+	])
+	.pipe(newer('.tmp/scripts'))
+	.pipe(sourcemaps.init())
+	.pipe(babel())
+	.pipe(sourcemaps.write())
+	.pipe(gulp.dest('.tmp/scripts'))
+	.pipe(concat('main.min.js'))
+	.pipe(uglify())
+	// Output files
+	.pipe(size({title: 'scripts'}))
+	.pipe(sourcemaps.write('.'))
+	.pipe(gulp.dest('dist/scripts'))
+	.pipe(gulp.dest('.tmp/scripts'));
+	cb();
+});
+
+gulp.task('clean', () => del(['.tmp/*', '!.tmp/images', 'dist/*', '!dist/.git'], {dot: true}));
+
+gulp.task('cleanTMPPhotos', () => del(['.tmp/images'], {dot: true}));
+
+
+// Copy all files at the root level (app)
+gulp.task('copy', () =>
+	gulp.src([
+		'app/**',
+		'!app/images'
+	], {
+		dot: true
+	}).pipe(gulp.dest('dist'))
+	.pipe(size({title: 'copy'}))
+);
+
+const compile = gulp.parallel('stylus', 'images', 'scripts');
+const cleanAll = gulp.parallel('clean', 'cleanTMPPhotos');
+// Build production files, the default task
+gulp.task('default', gulp.series(cleanAll, compile));
+
+
+gulp.task('nodemon', (cb) => {
 	let called = false;
 	nodemon({
 		script: './app/app.js',
@@ -73,45 +117,26 @@ function nodemonTask(cb) {
 
 		if(!called) {
 			called = true;
-			return cb();
+			cb();
 		}
 	})
 	.on('restart', () => {
 		console.log("restart");
 
-		reload()
-		return cb();
-	});
-}
-
-
-gulp.task('clean', () => {
-	console.log("CLEANING");
-	return del(['.tmp/*', '!.tmp/images', 'dist/*', '!dist/.git']);
+		reload();
+		cb();
+	})
 });
-
-gulp.task('cleanTMPPhotos', () => {
-	return del(['.tmp/images']);
-});
-//
-// const stylusWatch = () => gulp.watch('app/stylus/**/*.styl').on('change', gulp.series(stylusTask, reload));
-// const imageWatch = () => gulp.watch('app/images/**/*').on('change', gulp.series(images, reload));
-
-
-// const watchAll = gulp.parallel(stylusWatch, imageWatch);
-const compile = gulp.parallel(stylusTask, images);
-const cleanAll = gulp.parallel('clean', 'cleanTMPPhotos');
-// Build production files, the default task
-gulp.task('default', gulp.series(cleanAll, compile));
 
 // Watch files for changes & reload
-gulp.task('serve', gulp.series('default', nodemonTask, (done) => {
+gulp.task('serve', gulp.series('default', 'nodemon', (done) => {
 	console.log("SERVE");
 	browserSync.init(null, {
 		proxy: "http://localhost:5000",
 		notify: true,
 		// Customize the Browsersync console logging prefix
 		logPrefix: 'WSK',
+		open: false,
 		// Run as an https by uncommenting 'https: true'
 		// Note: this uses an unsigned certificate which on first access
 		//       will present a certificate warning in the browser.
@@ -119,8 +144,9 @@ gulp.task('serve', gulp.series('default', nodemonTask, (done) => {
 		port: 3000
 	});
 
-	gulp.watch("app/stylus/**/*.styl", stylusTask);
-	gulp.watch('app/images/**/*', images);
+	gulp.watch("app/stylus/**/*.styl", gulp.series('stylus'));
+	gulp.watch('app/images/**/*', gulp.series('images'));
+	gulp.watch(['app/scripts/**/*.js'], gulp.series(['scripts', reload]));
 	gulp.watch('app/views/**/*.pug').on('change', reload);
 
 	done()
